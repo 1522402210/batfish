@@ -31,15 +31,13 @@ import org.batfish.datamodel.InterfaceAddress;
 import org.batfish.datamodel.Ip;
 import org.batfish.datamodel.IpAccessListLine;
 import org.batfish.datamodel.NetworkFactory;
+import org.batfish.datamodel.PacketHeaderConstraints;
 import org.batfish.datamodel.Vrf;
 import org.batfish.datamodel.answers.Schema;
 import org.batfish.datamodel.table.TableAnswerElement;
 import org.batfish.main.Batfish;
 import org.batfish.main.BatfishTestUtils;
 import org.batfish.main.TestrigText;
-import org.batfish.specifier.NameRegexInterfaceLinkLocationSpecifierFactory;
-import org.batfish.specifier.NodeNameRegexInterfaceLinkLocationSpecifierFactory;
-import org.batfish.specifier.NodeNameRegexInterfaceLocationSpecifierFactory;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -80,9 +78,7 @@ public class TracerouteTest {
 
   @Test
   public void testGetFlows_interfaceSource() {
-    TracerouteQuestion question = new TracerouteQuestion();
-    question.setSourceLocationSpecifierFactory(NodeNameRegexInterfaceLocationSpecifierFactory.NAME);
-    question.setSourceLocationSpecifierInput("node1");
+    TracerouteQuestion question = new TracerouteQuestion(false, "node1", null);
 
     TracerouteAnswerer answerer = new TracerouteAnswerer(question, _batfish);
     Set<Flow> flows = answerer.getFlows(TAG);
@@ -111,10 +107,7 @@ public class TracerouteTest {
 
   @Test
   public void testGetFlows_interfaceLinkSource() {
-    TracerouteQuestion question = new TracerouteQuestion();
-    question.setSourceLocationSpecifierFactory(
-        NodeNameRegexInterfaceLinkLocationSpecifierFactory.NAME);
-    question.setSourceLocationSpecifierInput("node1");
+    TracerouteQuestion question = new TracerouteQuestion(false, "node1", null);
 
     TracerouteAnswerer answerer = new TracerouteAnswerer(question, _batfish);
     Set<Flow> flows = answerer.getFlows(TAG);
@@ -144,10 +137,9 @@ public class TracerouteTest {
 
   @Test
   public void testGetFlows_dst() {
-    TracerouteQuestion question = new TracerouteQuestion();
-    question.setDst("node2");
-    question.setSourceLocationSpecifierFactory(NameRegexInterfaceLinkLocationSpecifierFactory.NAME);
-    question.setSourceLocationSpecifierInput(LOOPBACK);
+    TracerouteQuestion question =
+        new TracerouteQuestion(
+            false, LOOPBACK, PacketHeaderConstraints.builder().setDstIp("node2").build());
 
     TracerouteAnswerer answerer = new TracerouteAnswerer(question, _batfish);
     Set<Flow> flows = answerer.getFlows(TAG);
@@ -192,10 +184,9 @@ public class TracerouteTest {
     SortedMap<String, Configuration> configs = aclNetwork();
     Batfish batfish = BatfishTestUtils.getBatfish(configs, _folder);
     batfish.computeDataPlane(false);
+    PacketHeaderConstraints header = PacketHeaderConstraints.builder().setDstIp("1.1.1.1").build();
 
-    TracerouteQuestion question = new TracerouteQuestion();
-    question.setDst("1.1.1.1");
-    question.setSourceLocationSpecifierInput(".*");
+    TracerouteQuestion question = new TracerouteQuestion(false, ".*", header);
 
     // without ignoreAcls we get DENIED_OUT
     TracerouteAnswerer answerer = new TracerouteAnswerer(question, batfish);
@@ -210,7 +201,7 @@ public class TracerouteTest {
                 Schema.set(Schema.FLOW_TRACE))));
 
     // with ignoreAcls we get NEIGHBOR_UNREACHABLE_OR_EXITS_NETWORK
-    question.setIgnoreAcls(true);
+    question = new TracerouteQuestion(true, ".*", header);
     answer = (TableAnswerElement) answerer.answer();
     assertThat(answer.getRows().getData(), hasSize(1));
     assertThat(

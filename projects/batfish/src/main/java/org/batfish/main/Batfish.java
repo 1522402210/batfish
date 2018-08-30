@@ -189,6 +189,7 @@ import org.batfish.question.ReachFilterParameters;
 import org.batfish.question.ReachabilityParameters;
 import org.batfish.question.ResolvedReachabilityParameters;
 import org.batfish.question.reachfilter.DifferentialReachFilterResult;
+import org.batfish.question.reachfilter.ReachFilterResult;
 import org.batfish.referencelibrary.ReferenceLibrary;
 import org.batfish.representation.aws.AwsConfiguration;
 import org.batfish.representation.host.HostConfiguration;
@@ -4382,43 +4383,6 @@ public class Batfish extends PluginConsumer implements IBatfish {
     BDD increasedBDD = baseAclBDD.not().and(deltaAclBDD).and(headerSpaceBDD).and(mgr.isSane());
     Flow increasedFlow = getFlow(bddPacket, mgr, hostname, increasedBDD).orElse(null);
 
-    // explanation without specialization.
-    if (!increasedBDD.isZero()) {
-      AclLineMatchExpr deltaAclExpr =
-          AclToAclLineMatchExpr.toAclLineMatchExpr(deltaAcl, deltaConfig.getIpAccessLists());
-      AclLineMatchExpr baseAclExpr =
-          AclToAclLineMatchExpr.toAclLineMatchExpr(baseAcl, baseConfig.getIpAccessLists());
-      AclLineMatchExpr increasedAclExpr =
-          AclLineMatchExprs.and(deltaAclExpr, AclLineMatchExprs.not(baseAclExpr));
-
-      try {
-        // TODO be robust to changes in IpSpace definitions
-        BDD bdd1 = increasedAclExpr.accept(deltaBDDAcl.getAclLineMatchExprToBDD());
-        /* TODO Bug in specialization! */
-        BDDIpAccessListSpecializer specializer =
-            new BDDIpAccessListSpecializer(
-                bddPacket, increasedBDD, deltaConfig.getIpSpaces(), mgr, false);
-        AclLineMatchExpr specializedExpr = specializer.visit(increasedAclExpr);
-        BDD bdd2 = specializedExpr.accept(deltaBDDAcl.getAclLineMatchExprToBDD());
-        // */
-
-        /* only specialize to the headerspace
-        BDDIpAccessListSpecializer specializer =
-            new BDDIpAccessListSpecializer(
-                bddPacket, headerSpaceBDD.and(mgr.isSane()), deltaConfig.getIpSpaces(), mgr);
-        AclLineMatchExpr specializedExpr = specializer.visit(increasedAclExpr);
-        BDD bdd2 = specializedExpr.accept(deltaBDDAcl.getAclLineMatchExprToBDD());
-        */
-
-        //        AclLineMatchExpr increasedExplanation = explainAclExpr(deltaBDDAcl,
-        // increasedAclExpr);
-        AclLineMatchExpr increasedExplanation = explainAclExpr(deltaBDDAcl, specializedExpr);
-        System.out.println("");
-      } catch (Throwable t) {
-        System.out.println("");
-      }
-    }
-
     if (!increasedBDD.isZero()) {
       BDDIpAccessListSpecializer specializer =
           new BDDIpAccessListSpecializer(
@@ -4433,6 +4397,12 @@ public class Batfish extends PluginConsumer implements IBatfish {
       AclLineMatchExpr increasedAclExpr =
           AclToAclLineMatchExpr.toAclLineMatchExpr(increasedAcl, specializedAcls);
       AclLineMatchExpr increasedExplanation = explainAclExpr(deltaBDDAcl, increasedAclExpr);
+      try {
+        String s = BatfishObjectMapper.writePrettyString(increasedExplanation);
+        System.out.println(s);
+      } catch (JsonProcessingException e) {
+        e.printStackTrace();
+      }
       System.out.println("\n");
     }
 
@@ -4448,7 +4418,14 @@ public class Batfish extends PluginConsumer implements IBatfish {
       AclLineMatchExpr decreasedExplanation = explainAclExpr(baseBDDAcl, decreasedAclExpr);
       System.out.println("\n");
     }
-    return new DifferentialReachFilterResult(increasedFlow, decreasedFlow);
+
+    @Nullable
+    ReachFilterResult increasedResult =
+        increasedFlow == null ? null : new ReachFilterResult(AclLineMatchExprs.TRUE, increasedFlow);
+    @Nullable
+    ReachFilterResult decreasedResult =
+        decreasedFlow == null ? null : new ReachFilterResult(AclLineMatchExprs.TRUE, decreasedFlow);
+    return new DifferentialReachFilterResult(increasedResult, decreasedResult);
   }
 
   private Set<String> resolveDeltaSourceInterfaces(ReachFilterParameters parameters, String node) {
@@ -4489,7 +4466,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
   }
 
   @Override
-  public Optional<Flow> reachFilter(
+  public Optional<ReachFilterResult> reachFilter(
       Configuration node, IpAccessList acl, ReachFilterParameters parameters) {
     BDDPacket bddPacket = new BDDPacket();
 
@@ -4513,8 +4490,15 @@ public class Batfish extends PluginConsumer implements IBatfish {
         new BDDIpAccessListSpecializer(bddPacket, headerSpaceBDD, node.getIpSpaces(), mgr, false);
     AclLineMatchExpr specializedExpr = specializer.visit(expr);
     AclLineMatchExpr explanation = explainAclExpr(bddAcl, specializedExpr);
+    try {
+      String x = BatfishObjectMapper.writePrettyString(explanation);
+      System.out.println(x);
+    } catch (JsonProcessingException e) {
+      e.printStackTrace();
+    }
 
-    return getFlow(bddPacket, mgr, node.getHostname(), bdd);
+    Optional<Flow> optionalFlow = getFlow(bddPacket, mgr, node.getHostname(), bdd);
+    return optionalFlow.map(flow -> new ReachFilterResult(AclLineMatchExprs.TRUE, flow));
   }
 
   private AclLineMatchExpr explainAclExpr(BDDAcl bddAcl, AclLineMatchExpr expr) {
@@ -4532,14 +4516,6 @@ public class Batfish extends PluginConsumer implements IBatfish {
     SortedSet<AclLineMatchExpr> satDisjuncts =
         disjuncts
             .stream()
-            .filter(
-                e -> {
-                  if (!bddAcl.getAclLineMatchExprToBDD().visit(e).isZero()) {
-                    return true;
-                  } else {
-                    return false;
-                  }
-                })
             .map(
                 e ->
                     e instanceof AndMatchExpr

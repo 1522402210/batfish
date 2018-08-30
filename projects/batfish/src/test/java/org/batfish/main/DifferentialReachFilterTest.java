@@ -89,15 +89,19 @@ public class DifferentialReachFilterTest {
     Batfish batfish = getBatfish(baseConfig, deltaConfig);
     DifferentialReachFilterResult result =
         batfish.differentialReachFilter(baseConfig, baseAcl, deltaConfig, deltaAcl, _params);
-    assertThat("Expected no decreased flow", !result.getDecreasedFlow().isPresent());
-    assertThat("Expected increased flow", result.getIncreasedFlow().isPresent());
-    assertThat(result.getIncreasedFlow().get(), allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
+    assertThat("Expected no decreased result", !result.getDecreasedResult().isPresent());
+    assertThat("Expected increased result", result.getIncreasedResult().isPresent());
+    assertThat(
+        result.getIncreasedResult().get().getExampleFlow(),
+        allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
 
     // flip base and delta
     result = batfish.differentialReachFilter(deltaConfig, deltaAcl, baseConfig, baseAcl, _params);
-    assertThat("Expected no increased flow", !result.getIncreasedFlow().isPresent());
-    assertThat("Expected decreased flow", result.getDecreasedFlow().isPresent());
-    assertThat(result.getDecreasedFlow().get(), allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
+    assertThat("Expected no increased result", !result.getIncreasedResult().isPresent());
+    assertThat("Expected decreased result", result.getDecreasedResult().isPresent());
+    assertThat(
+        result.getDecreasedResult().get().getExampleFlow(),
+        allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
   }
 
   @Test
@@ -110,15 +114,15 @@ public class DifferentialReachFilterTest {
 
     DifferentialReachFilterResult result =
         batfish.differentialReachFilter(config, baseAcl, config, deltaAcl, _params);
-    assertThat("Expected no decreased flow", !result.getDecreasedFlow().isPresent());
-    assertThat("Expected increased flow", result.getIncreasedFlow().isPresent());
-    assertThat(result.getIncreasedFlow().get(), hasDstIp(IP));
+    assertThat("Expected no decreased result", !result.getDecreasedResult().isPresent());
+    assertThat("Expected increased result", result.getIncreasedResult().isPresent());
+    assertThat(result.getIncreasedResult().get().getExampleFlow(), hasDstIp(IP));
 
     // flip base and delta ACL
     result = batfish.differentialReachFilter(config, deltaAcl, config, baseAcl, _params);
-    assertThat("Expected no increased flow", !result.getIncreasedFlow().isPresent());
-    assertThat("Expected decreased flow", result.getDecreasedFlow().isPresent());
-    assertThat(result.getDecreasedFlow().get(), hasDstIp(IP));
+    assertThat("Expected no increased result", !result.getIncreasedResult().isPresent());
+    assertThat("Expected decreased result", result.getDecreasedResult().isPresent());
+    assertThat(result.getDecreasedResult().get().getExampleFlow(), hasDstIp(IP));
   }
 
   @Test
@@ -151,9 +155,11 @@ public class DifferentialReachFilterTest {
     // can match line 1 because IFACE1 is specified
     DifferentialReachFilterResult result =
         batfish.differentialReachFilter(baseConfig, baseAcl, deltaConfig, deltaAcl, params);
-    assertThat("Expected no decreased flow", !result.getDecreasedFlow().isPresent());
-    assertThat("Expected increased flow", result.getIncreasedFlow().isPresent());
-    assertThat(result.getIncreasedFlow().get(), allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
+    assertThat("Expected no decreased result", !result.getDecreasedResult().isPresent());
+    assertThat("Expected increased result", result.getIncreasedResult().isPresent());
+    assertThat(
+        result.getIncreasedResult().get().getExampleFlow(),
+        allOf(hasIngressInterface(IFACE1), hasDstIp(IP)));
 
     params =
         _params
@@ -164,7 +170,7 @@ public class DifferentialReachFilterTest {
 
     // not can't match line 1 because IFACE2 is specified
     result = batfish.differentialReachFilter(baseConfig, baseAcl, deltaConfig, deltaAcl, params);
-    assertThat("Expected no decreased flow", !result.getDecreasedFlow().isPresent());
-    assertThat("Expected no increased flow", !result.getIncreasedFlow().isPresent());
+    assertThat("Expected no decreased result", !result.getDecreasedResult().isPresent());
+    assertThat("Expected no increased result", !result.getIncreasedResult().isPresent());
   }
 }

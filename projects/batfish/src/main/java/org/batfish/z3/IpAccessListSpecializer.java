@@ -191,7 +191,7 @@ public abstract class IpAccessListSpecializer
   }
 
   @Override
-  public final AclLineMatchExpr visitNotMatchExpr(NotMatchExpr notMatchExpr) {
+  public AclLineMatchExpr visitNotMatchExpr(NotMatchExpr notMatchExpr) {
     AclLineMatchExpr subExpr = notMatchExpr.getOperand().accept(this);
 
     if (subExpr == TrueExpr.INSTANCE) {

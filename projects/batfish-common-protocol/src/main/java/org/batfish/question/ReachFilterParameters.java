@@ -9,6 +9,7 @@ import javax.annotation.Nonnull;
 import org.batfish.datamodel.AclIpSpace;
 import org.batfish.datamodel.EmptyIpSpace;
 import org.batfish.datamodel.HeaderSpace;
+import org.batfish.datamodel.IpProtocol;
 import org.batfish.datamodel.IpSpace;
 import org.batfish.specifier.InterfaceSpecifier;
 import org.batfish.specifier.IpSpaceAssignment.Entry;
@@ -54,6 +55,8 @@ public final class ReachFilterParameters {
         .toBuilder()
         .setSrcIps(resolveIpSpaceSpecifier(_sourceIpSpaceSpecifier, ctx))
         .setDstIps(resolveIpSpaceSpecifier(_destinationIpSpaceSpecifier, ctx))
+        // .setDstProtocols(ImmutableList.of(Protocol.TCP))
+        .setIpProtocols(ImmutableList.of(IpProtocol.TCP))
         .build();
   }
 

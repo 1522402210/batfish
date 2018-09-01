@@ -2,13 +2,11 @@ package org.batfish.main;
 
 import static org.batfish.datamodel.acl.normalize.Negate.negate;
 
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.Ordering;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedSet;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.batfish.datamodel.acl.AclLineMatchExpr;
@@ -41,102 +39,77 @@ public final class Normalizer implements GenericAclLineMatchExprVisitor<AclLineM
     return expr.accept(this);
   }
 
-  private static AclLineMatchExpr and(Set<AclLineMatchExpr> exprs) {
-    if (exprs.contains(FalseExpr.INSTANCE)) {
-      return FalseExpr.INSTANCE;
-    }
-    if (exprs
-        .stream()
-        .anyMatch(expr -> expr instanceof AndMatchExpr || expr instanceof OrMatchExpr)) {
-      return null;
-    }
-
-    SortedSet<AclLineMatchExpr> conjuncts =
-        exprs
-            .stream()
-            .filter(expr -> expr != TrueExpr.INSTANCE)
-            .collect(ImmutableSortedSet.toImmutableSortedSet(Ordering.natural()));
-    if (conjuncts.isEmpty()) {
-      return TrueExpr.INSTANCE;
-    } else if (conjuncts.size() == 1) {
-      return conjuncts.first();
-    } else {
-      return new AndMatchExpr(conjuncts);
-    }
-  }
-
-  private static AclLineMatchExpr or(ImmutableSortedSet<AclLineMatchExpr> exprs) {
-    if (exprs.contains(TrueExpr.INSTANCE)) {
-      return TrueExpr.INSTANCE;
-    }
-    SortedSet<AclLineMatchExpr> disjuncts =
-        exprs
-            .stream()
-            .filter(expr -> expr != FalseExpr.INSTANCE)
-            .collect(ImmutableSortedSet.toImmutableSortedSet(Comparator.naturalOrder()));
-    if (disjuncts.isEmpty()) {
-      return FalseExpr.INSTANCE;
-    } else if (disjuncts.size() == 1) {
-      return disjuncts.first();
-    } else {
-      return new OrMatchExpr(disjuncts);
-    }
-  }
-
   @Override
   public AclLineMatchExpr visitAndMatchExpr(AndMatchExpr andMatchExpr) {
-    List<AclLineMatchExpr> normalizedConjuncts =
-        andMatchExpr
-            .getConjuncts()
-            .stream()
-            .map(this::visit)
-            // expand any nested AndMatchExprs
-            .flatMap(
-                expr ->
-                    expr instanceof AndMatchExpr
-                        ? ((AndMatchExpr) expr).getConjuncts().stream()
-                        : Stream.of(expr))
-            .filter(expr -> expr != TrueExpr.INSTANCE)
-            .collect(Collectors.toList());
-
     // Normalize subexpressions, combine all OR subexpressions, and then distribute the AND over
     // the single OR.
-    Set<ConjunctsBuilder> orOfAnds = new HashSet<>();
-    orOfAnds.add(new ConjunctsBuilder(_aclLineMatchExprToBDD));
+    Set<ConjunctsBuilder> disjuncts = new HashSet<>();
+    disjuncts.add(new ConjunctsBuilder(_aclLineMatchExprToBDD));
 
-    for (AclLineMatchExpr conjunct : normalizedConjuncts) {
-      if (conjunct instanceof OrMatchExpr) {
+    BiConsumer<Set<ConjunctsBuilder>, AclLineMatchExpr> addToEachDisjunct =
+        (conjunctsBuilders, expr) -> {
+          List<ConjunctsBuilder> unsatDisjuncts = new ArrayList<>();
+          conjunctsBuilders.forEach(
+              conjunctsBuilder -> {
+                conjunctsBuilder.add(expr);
+                if (conjunctsBuilder.unsat()) {
+                  unsatDisjuncts.add(conjunctsBuilder);
+                }
+              });
+          System.out.println(String.format("Removing %d of %d conjunctBuilders", unsatDisjuncts.size(), conjunctsBuilders.size()));
+          conjunctsBuilders.removeAll(unsatDisjuncts);
+        };
+
+    int counter = 0;
+    for (AclLineMatchExpr conjunct : andMatchExpr.getConjuncts()) {
+      counter++;
+      AclLineMatchExpr conjunctNf = visit(conjunct);
+      if (conjunctNf instanceof AndMatchExpr) {
+        for (AclLineMatchExpr expr : ((AndMatchExpr) conjunctNf).getConjuncts()) {
+          addToEachDisjunct.accept(disjuncts, expr);
+        }
+      } else if (conjunctNf instanceof OrMatchExpr) {
         /* concatenate each AND with each disjunct, multiplying the number of ANDs in orOfAnds
          * by the number of disjuncts within the OrMatchExpr. i.e. this is where the blow-up caused
          * by normalization happens.
          */
-        OrMatchExpr orMatchExpr = (OrMatchExpr) conjunct;
-        Set<ConjunctsBuilder> newOrOfAnds = new HashSet<>();
-        for (AclLineMatchExpr disjunct : orMatchExpr.getDisjuncts()) {
-          for (ConjunctsBuilder conjuncts : orOfAnds) {
-            ConjunctsBuilder newConjuncts = new ConjunctsBuilder(conjuncts);
-            if (disjunct instanceof AndMatchExpr) {
-              ((AndMatchExpr) disjunct).getConjuncts().forEach(newConjuncts::add);
-            } else {
-              newConjuncts.add(disjunct);
-            }
-            if (!newConjuncts.unsat()) {
-              newOrOfAnds.add(newConjuncts);
-            } else {
-              System.out.println("unsat conjuncts");
-            }
-          }
-        }
-        orOfAnds = newOrOfAnds;
+        OrMatchExpr orMatchExpr = (OrMatchExpr) conjunctNf;
+        final Set<ConjunctsBuilder> oldDisjuncts = disjuncts;
+        disjuncts =
+            orMatchExpr
+                .getDisjuncts()
+                .stream()
+                .flatMap(
+                    expr ->
+                        oldDisjuncts
+                            .stream()
+                            .map(ConjunctsBuilder::new)
+                            .peek(
+                                conjunctsBuilder -> {
+                                  if (expr instanceof AndMatchExpr) {
+                                    ((AndMatchExpr) expr)
+                                        .getConjuncts()
+                                        .forEach(conjunctsBuilder::add);
+                                  } else {
+                                    conjunctsBuilder.add(expr);
+                                  }
+                                }))
+                .filter(conjunctsBuilder -> !conjunctsBuilder.unsat())
+                .collect(Collectors.toSet());
       } else {
         // add it to each AND
-        assert !(conjunct instanceof AndMatchExpr);
-        orOfAnds.forEach(conjuncts -> conjuncts.add(conjunct));
+        addToEachDisjunct.accept(disjuncts, conjunctNf);
+      }
+
+      if(disjuncts.isEmpty()) {
+        // everything unsat.
+        System.out.println(String.format("Detected unsat after %s of %s iterations", counter, andMatchExpr.getConjuncts().size()));
+        break;
       }
     }
 
     DisjunctsBuilder disjunctsBuilder = new DisjunctsBuilder(_aclLineMatchExprToBDD);
-    orOfAnds.stream().map(ConjunctsBuilder::build).forEach(disjunctsBuilder::add);
+    disjuncts.stream().map(ConjunctsBuilder::build).forEach(disjunctsBuilder::add);
     return disjunctsBuilder.build();
   }
 

@@ -4386,7 +4386,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
     BDD decreasedBDD = baseAclBDD.and(deltaAclBDD.not());
     Flow decreasedFlow = getFlow(bddPacket, mgr, hostname, decreasedBDD).orElse(null);
 
-    if (!decreasedBDD.isZero()) {
+    if (false && !decreasedBDD.isZero()) {
       IpAccessList decreasedAcl =
           new BDDIpAccessListSpecializer(bddPacket, decreasedBDD, baseConfig.getIpSpaces(), mgr)
               .specialize(baseAcl);
@@ -4409,25 +4409,32 @@ public class Batfish extends PluginConsumer implements IBatfish {
     AclLineMatchExpr baseExpr = toAclLineMatchExpr(baseAcl, baseConfig.getIpAccessLists());
     AclLineMatchExpr deltaExpr = toAclLineMatchExpr(deltaAcl, deltaConfig.getIpAccessLists());
 
-    AclLineMatchExpr explanation = explainAclExpr( // don't specialize this
-        AclLineMatchExprs.and(headerSpaceExpr, srcExpr),
-        // do specialize this
-        AclLineMatchExprs.and(deltaExpr, AclLineMatchExprs.not(baseExpr)),
-        deltaBDDAcl,
-        mgr,
-        increasedBDD,
-        deltaConfig.getIpSpaces());
+    /*
+    AclLineMatchExpr baseExprSpecialized =
+            baseExpr.accept(new BDDIpAccessListSpecializer(bddPacket, baseAclBDD.and(headerSpaceBDD).and(mgr.isSane()), baseConfig.getIpSpaces(), mgr, false));
+            */
+
+    NewNormalizer normalizer = new NewNormalizer(deltaBDDAcl.getAclLineMatchExprToBDD());
+    normalizer.visit(deltaExpr);
+    AclLineMatchExpr expr = normalizer.normalize(new NotMatchExpr(baseExpr));
+
+
+    AclLineMatchExpr explanation =
+        explainAclExpr( // don't specialize this
+            AclLineMatchExprs.and(headerSpaceExpr, srcExpr),
+            // do specialize this
+            AclLineMatchExprs.and(deltaExpr, AclLineMatchExprs.not(baseExpr)),
+            deltaBDDAcl,
+            mgr,
+            increasedBDD,
+            deltaConfig.getIpSpaces());
 
     AclLineMatchExpr simplExplanation =
         explanation.equals(headerSpaceExpr) ? AclLineMatchExprs.TRUE : explanation;
 
     @Nullable
     ReachFilterResult increasedResult =
-        increasedFlow == null
-            ? null
-            : new ReachFilterResult(
-                explanation,
-                increasedFlow);
+        increasedFlow == null ? null : new ReachFilterResult(simplExplanation, increasedFlow);
     @Nullable
     ReachFilterResult decreasedResult =
         decreasedFlow == null ? null : new ReachFilterResult(AclLineMatchExprs.TRUE, decreasedFlow);
@@ -4499,7 +4506,8 @@ public class Batfish extends PluginConsumer implements IBatfish {
         AclLineMatchExprs.and(
             new NotMatchExpr(OriginatingFromDevice.INSTANCE),
             new MatchSrcInterface(activeInterfaces));
-    AclLineMatchExpr queryExpr = AclLineMatchExprs.and(headerSpaceExpr, srcExpr);
+    AclLineMatchExpr queryExpr =
+        AclLineMatchExprs.TRUE; // AclLineMatchExprs.and(headerSpaceExpr, srcExpr);
 
     AclLineMatchExpr explanation =
         explainAclExpr(
@@ -4524,20 +4532,19 @@ public class Batfish extends PluginConsumer implements IBatfish {
       BDDSourceManager mgr,
       BDD headerSpaceBDD,
       Map<String, IpSpace> ipSpaces) {
-    return explainAclExpr(
-        bddAcl,
-        AclLineMatchExprs.and(
-            extraConstraints,
-            expr.accept(
-                new BDDIpAccessListSpecializer(
-                    bddAcl.getPkt(), headerSpaceBDD, ipSpaces, mgr, false))));
+    return explainAclExpr(bddAcl, AclLineMatchExprs.and(extraConstraints, expr));
+    /*
+    expr.accept(
+        new BDDIpAccessListSpecializer(
+            bddAcl.getPkt(), headerSpaceBDD, ipSpaces, mgr, false))));
+            */
   }
 
   static AclLineMatchExpr explainAclExpr(BDDAcl bddAcl, AclLineMatchExpr expr) {
 
     AclLineMatchExpr nf = null;
     try {
-      nf = new Normalizer(bddAcl.getAclLineMatchExprToBDD()).normalize(expr);
+      nf = new NewNormalizer(bddAcl.getAclLineMatchExprToBDD()).normalize(expr);
     } catch (Throwable e) {
       System.out.println(e);
     }

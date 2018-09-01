@@ -85,13 +85,13 @@ public class AclExplanation {
     return _satisfiable;
   }
 
-    private boolean requireNotHeaderSpace(HeaderSpace headerSpace) {
-      if(!_satisfiable) {
-          return false;
-      }
-      _notHeaderSpaces.add(headerSpace);
-      return true;
+  private boolean requireNotHeaderSpace(HeaderSpace headerSpace) {
+    if (!_satisfiable) {
+      return false;
     }
+    _notHeaderSpaces.add(headerSpace);
+    return true;
+  }
 
   private Optional<AclLineMatchExpr> build() {
     if (!_satisfiable) {
@@ -103,8 +103,9 @@ public class AclExplanation {
     if (_headerSpace != null) {
       conjunctsBuilder.add(new MatchHeaderSpace(_headerSpace));
     }
-    _notHeaderSpaces.forEach(notHeaderSpace ->
-        conjunctsBuilder.add(new NotMatchExpr(new MatchHeaderSpace(notHeaderSpace))));
+    _notHeaderSpaces.forEach(
+        notHeaderSpace ->
+            conjunctsBuilder.add(new NotMatchExpr(new MatchHeaderSpace(notHeaderSpace))));
     switch (_sources) {
       case DEVICE:
         conjunctsBuilder.add(OriginatingFromDevice.INSTANCE);
@@ -158,11 +159,12 @@ public class AclExplanation {
 
                   @Override
                   public Void visitNotMatchExpr(NotMatchExpr notMatchExpr) {
-                      if(notMatchExpr.getOperand() instanceof MatchHeaderSpace) {
-                          HeaderSpace headerSpace = ((MatchHeaderSpace)notMatchExpr.getOperand()).getHeaderspace();
-                          explanation.requireNotHeaderSpace(headerSpace);
-                          return null;
-                      }
+                    if (notMatchExpr.getOperand() instanceof MatchHeaderSpace) {
+                      HeaderSpace headerSpace =
+                          ((MatchHeaderSpace) notMatchExpr.getOperand()).getHeaderspace();
+                      explanation.requireNotHeaderSpace(headerSpace);
+                      return null;
+                    }
                     throw new IllegalArgumentException(
                         "Can only explain normalized AclLineMatchExprs.");
                   }

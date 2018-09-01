@@ -18,17 +18,20 @@ public abstract class AclLineMatchExprSetBuilder {
   private final AclLineMatchExprToBDD _aclLineMatchExprToBDD;
   private final Map<AclLineMatchExpr, BDD> _exprs;
   private BDD _bdd;
+  private BDD _orExprBDDs;
 
   protected AclLineMatchExprSetBuilder(AclLineMatchExprToBDD aclLineMatchExprToBDD, BDD identity) {
     _aclLineMatchExprToBDD = aclLineMatchExprToBDD;
     _exprs = new HashMap<>();
     _bdd = identity;
+    _orExprBDDs = identity.getFactory().zero();
   }
 
   public AclLineMatchExprSetBuilder(AclLineMatchExprSetBuilder other) {
     _aclLineMatchExprToBDD = other._aclLineMatchExprToBDD;
     _exprs = new HashMap<>(other._exprs);
     _bdd = other._bdd;
+    _orExprBDDs = other._orExprBDDs;
   }
 
   protected abstract BDD identity();
@@ -51,17 +54,25 @@ public abstract class AclLineMatchExprSetBuilder {
       return;
     }
 
-    List<AclLineMatchExpr> toRemove = new ArrayList<>();
-    _exprs.forEach(
-        (expr1, bdd1) -> {
-          if (combinator(bdd1, exprBdd).equals(exprBdd)) {
-            // bdd1 is now redundant; remove
-            toRemove.add(expr1);
-          }
-        });
-    toRemove.forEach(_exprs::remove);
+    if (!_exprs.isEmpty() && exprBdd.imp(_orExprBDDs).isOne()) {
+      // can remove something
+      List<AclLineMatchExpr> toRemove = new ArrayList<>();
+      _exprs.forEach(
+          (expr1, bdd1) -> {
+            if (combinator(bdd1, exprBdd).equals(exprBdd)) {
+              // bdd1 is now redundant; remove
+              toRemove.add(expr1);
+            }
+          });
+      assert !toRemove.isEmpty();
+      toRemove.forEach(_exprs::remove);
+
+      _orExprBDDs = _exprs.values().stream().reduce(_bdd.getFactory().zero(), BDD::or);
+    }
+
     _exprs.put(expr, exprBdd);
     _bdd = newBdd;
+    _orExprBDDs = _orExprBDDs.or(exprBdd);
   }
 
   protected BDD getBdd() {

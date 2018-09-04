@@ -50,7 +50,7 @@ public final class BDDAcl {
     _factory = _pkt.getFactory();
     _ipSpaceEnv = ImmutableMap.copyOf(ipSpaceEnv);
     _aclLineMatchExprToBDD =
-        new AclLineMatchExprToBDD(_factory, _pkt, _aclEnv, _ipSpaceEnv, _bddSrcManager);
+        new MemoizedAclLineMatchExprToBDD(_factory, _pkt, _aclEnv, _ipSpaceEnv, _bddSrcManager);
     _bdd = computeACL(_factory, _aclLineMatchExprToBDD, acl);
   }
 

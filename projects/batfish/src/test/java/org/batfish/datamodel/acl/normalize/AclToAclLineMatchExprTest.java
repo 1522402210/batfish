@@ -54,7 +54,7 @@ public class AclToAclLineMatchExprTest {
             .setLines(ImmutableList.of(ACCEPT_A, REJECT_B, ACCEPT_C, REJECT_C, ACCEPT_D, REJECT_E))
             .build();
     assertThat(
-        toAclLineMatchExpr(acl, ImmutableMap.of()),
+        toAclLineMatchExpr(null, acl, ImmutableMap.of()),
         equalTo(or(EXPR_A, and(not(EXPR_B), EXPR_C), and(not(EXPR_B), not(EXPR_C), EXPR_D))));
   }
 
@@ -70,7 +70,7 @@ public class AclToAclLineMatchExprTest {
         builder
             .setLines(ImmutableList.of(ACCEPT_C, REJECT_C, permitIfAcl1Permits, ACCEPT_D, REJECT_E))
             .build();
-    AclLineMatchExpr expr = toAclLineMatchExpr(acl2, namedAcls);
+    AclLineMatchExpr expr = toAclLineMatchExpr(null, acl2, namedAcls);
     return;
   }
 }

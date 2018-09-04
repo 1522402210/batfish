@@ -52,7 +52,7 @@ public abstract class IpSpaceSpecializer implements GenericIpSpaceVisitor<IpSpac
       Set<IpWildcard> blacklist);
 
   public IpSpace specialize(IpSpace ipSpace) {
-    return _simplifier.simplify(ipSpace.accept(this));
+    return _simplifier.simplify(visit(ipSpace));
   }
 
   protected abstract IpSpace specialize(Ip ip);
@@ -66,7 +66,7 @@ public abstract class IpSpaceSpecializer implements GenericIpSpaceVisitor<IpSpac
         aclIpSpace
             .getLines()
             .stream()
-            .map(line -> line.toBuilder().setIpSpace(line.getIpSpace().accept(this)).build())
+            .map(line -> line.toBuilder().setIpSpace(visit(line.getIpSpace())).build())
             .filter(line -> line.getIpSpace() != EmptyIpSpace.INSTANCE)
             .collect(ImmutableList.toImmutableList());
 
@@ -97,7 +97,7 @@ public abstract class IpSpaceSpecializer implements GenericIpSpaceVisitor<IpSpac
   public IpSpace visitIpSpaceReference(IpSpaceReference ipSpaceReference) {
     String name = ipSpaceReference.getName();
     return _specializedNamedIpSpaces.computeIfAbsent(
-        name, k -> _namedIpSpaces.get(name).accept(this));
+        name, k -> visit(_namedIpSpaces.get(name)));
   }
 
   @Override

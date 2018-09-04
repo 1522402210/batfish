@@ -52,12 +52,22 @@ public final class BDDIpAccessListSpecializer extends IpAccessListSpecializer {
       Map<String, IpSpace> namedIpSpaces,
       BDDSourceManager bddSrcManager,
       boolean simplifyToTrue) {
+    this(pkt,flowBDD,namedIpSpaces,bddSrcManager, new IpSpaceToBDD(pkt.getDstIp().getFactory(), pkt.getDstIp(), namedIpSpaces),
+            new IpSpaceToBDD(pkt.getSrcIp().getFactory(), pkt.getSrcIp(), namedIpSpaces), simplifyToTrue);
+  }
+
+  public BDDIpAccessListSpecializer(
+          BDDPacket pkt,
+          BDD flowBDD,
+          Map<String, IpSpace> namedIpSpaces,
+          BDDSourceManager bddSrcManager,
+          IpSpaceToBDD dstIpSpaceToBdd, IpSpaceToBDD srcIpSpaceToBdd, boolean simplifyToTrue) {
     _bddSrcManager = bddSrcManager;
     _dstIpSpaceSpecializer =
         new BDDIpSpaceSpecializer(
             flowBDD,
             namedIpSpaces,
-            new IpSpaceToBDD(pkt.getDstIp().getFactory(), pkt.getDstIp(), namedIpSpaces),
+            dstIpSpaceToBdd,
             simplifyToTrue);
     _pkt = pkt;
     _flowBDD = flowBDD;
@@ -66,7 +76,7 @@ public final class BDDIpAccessListSpecializer extends IpAccessListSpecializer {
         new BDDIpSpaceSpecializer(
             flowBDD,
             namedIpSpaces,
-            new IpSpaceToBDD(pkt.getSrcIp().getFactory(), pkt.getSrcIp(), namedIpSpaces),
+            srcIpSpaceToBdd,
             simplifyToTrue);
   }
 

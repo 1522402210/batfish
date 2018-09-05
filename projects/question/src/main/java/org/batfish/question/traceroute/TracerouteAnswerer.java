@@ -211,7 +211,8 @@ public final class TracerouteAnswerer extends Answerer {
     ImmutableSet.Builder<Flow> setBuilder = ImmutableSet.builder();
     // Perform cross-product of all locations to flows
     for (Location srcLocation : srcLocations) {
-      Flow.Builder flowBuilder = constraintsToFlow(question.getHeaderConstraints(), srcLocation);
+      Flow.Builder flowBuilder =
+          headerConstraintsToFlow(question.getHeaderConstraints(), srcLocation);
       setSourceLocation(flowBuilder, srcLocation);
       flowBuilder.setTag(tag);
       setBuilder.add(flowBuilder.build());
@@ -227,7 +228,7 @@ public final class TracerouteAnswerer extends Answerer {
    *     value.
    */
   @VisibleForTesting
-  Flow.Builder constraintsToFlow(PacketHeaderConstraints constraints, Location srcLocation)
+  Flow.Builder headerConstraintsToFlow(PacketHeaderConstraints constraints, Location srcLocation)
       throws IllegalArgumentException {
     Flow.Builder builder = Flow.builder();
 
@@ -255,12 +256,18 @@ public final class TracerouteAnswerer extends Answerer {
               .stream()
               .filter(e -> e.getLocations().contains(srcLocation))
               .findFirst();
+
+      final String locationSpecifierInput =
+          ((TracerouteQuestion) _question).getSourceLocationSpecifierInput();
       checkArgument(
           entry.isPresent(),
           "Cannot resolve a source IP address from location %s",
-          ((TracerouteQuestion) _question).getSourceLocationSpecifierInput());
+          locationSpecifierInput);
       Optional<Ip> srcIp = _ipSpaceRepresentative.getRepresentative(entry.get().getIpSpace());
-      checkArgument(srcIp.isPresent(), "At least one destination IP is required");
+      checkArgument(
+          srcIp.isPresent(),
+          "At least one source IP is required, location %s produced none",
+          locationSpecifierInput);
       builder.setSrcIp(srcIp.get());
     }
 

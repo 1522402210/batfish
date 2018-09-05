@@ -1,9 +1,11 @@
 package org.batfish.datamodel;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Sets;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
@@ -13,6 +15,21 @@ import javax.annotation.Nullable;
 public final class IntersectHeaderSpaces {
   private static final class NoIntersection extends Exception {
     public static final long serialVersionUID = 1;
+  }
+
+  private static boolean isUniverse(@Nullable IpSpace ipSpace) {
+    return ipSpace == null || ipSpace == UniverseIpSpace.INSTANCE
+            || ipSpace.equals(IpWildcard.ANY.toIpSpace()) || ipSpace.equals(new IpWildcardIpSpace(IpWildcard.ANY));
+  }
+
+  private static IpSpace intersection(IpSpace ipSpace1, IpSpace ipSpace2) {
+    if (isUniverse(ipSpace1)) {
+        return ipSpace2;
+    }
+    if (isUniverse(ipSpace2)) {
+        return ipSpace1;
+    }
+    return AclIpSpace.intersection(ipSpace1,ipSpace2);
   }
 
   public static Optional<HeaderSpace> intersect(HeaderSpace h1, HeaderSpace h2) {
@@ -32,7 +49,7 @@ public final class IntersectHeaderSpaces {
           HeaderSpace.builder()
               .setDscps(intersectSimpleSets(h1.getDscps(), h2.getDscps()))
               // TODO check for non-empty IpSpace intersections, simplify when possible, etc
-              .setDstIps(AclIpSpace.intersection(h1.getDstIps(), h2.getDstIps()))
+              .setDstIps(intersection(h1.getDstIps(), h2.getDstIps()))
               .setDstPorts(intersectSubRangeSets(h1.getDstPorts(), h2.getDstPorts()))
               .setDstProtocols(intersectSimpleSets(h1.getDstProtocols(), h2.getDstProtocols()))
               // TODO simplify notDstIps
@@ -47,10 +64,22 @@ public final class IntersectHeaderSpaces {
               .setSrcIps(AclIpSpace.intersection(h1.getSrcIps(), h2.getSrcIps()))
               .setSrcOrDstPorts(intersectSubRangeSets(h1.getSrcOrDstPorts(), h2.getSrcOrDstPorts()))
               .setSrcPorts(intersectSubRangeSets(h1.getSrcPorts(), h2.getSrcPorts()))
+              .setTcpFlags(intersectTcpFlagMatchConditions(h1.getTcpFlags(), h2.getTcpFlags()))
               .build());
     } catch (NoIntersection e) {
       return Optional.empty();
     }
+  }
+
+  private static Iterable<TcpFlagsMatchConditions> intersectTcpFlagMatchConditions(List<TcpFlagsMatchConditions> tcpFlags1, List<TcpFlagsMatchConditions> tcpFlags2) {
+    if(tcpFlags1 == null || tcpFlags1.isEmpty()) {
+      return tcpFlags2;
+    }
+    if (tcpFlags2 == null || tcpFlags2.isEmpty()) {
+      return tcpFlags1;
+    }
+    // TODO smarter
+    return Sets.intersection(ImmutableSet.copyOf(tcpFlags1), ImmutableSet.copyOf(tcpFlags2));
   }
 
   private static boolean unconstrained(IpSpace srcOrDstIps) {

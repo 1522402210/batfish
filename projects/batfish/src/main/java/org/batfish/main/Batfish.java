@@ -4424,6 +4424,11 @@ public class Batfish extends PluginConsumer implements IBatfish {
       System.out.println("\n");
     }
     */
+    AclLineMatchExpr headerSpaceExpr =
+            headerSpace.getNegate()
+                    ? new NotMatchExpr(
+                    new MatchHeaderSpace(headerSpace.toBuilder().setNegate(false).build()))
+                    : new MatchHeaderSpace(headerSpace);
 
     AclLineMatchExprToBDD baseAclLineMatchExprToBDD = baseBDDAcl.getAclLineMatchExprToBDD();
     AclLineMatchExprToBDD deltaAclLineMatchExprToBDD = deltaBDDAcl.getAclLineMatchExprToBDD();
@@ -4432,7 +4437,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
     List<Pair<LineAction,AclLineMatchExpr>> deltaLines = AclToAclLineMatchExpr.aclLines(deltaAclLineMatchExprToBDD, deltaAcl, deltaConfig.getIpAccessLists());
 
     List<AclLineMatchExpr> exprs = new ArrayList<>();
-    BDD reachBdd = baseAclBDD.not();
+    BDD reachBdd = headerSpaceBDD.and(baseAclBDD.not());
     IpSpaceToBDD baseDstIpSpaceToBdd = new MemoizedIpSpaceToBDD(bddPacket.getFactory(), bddPacket.getDstIp(), baseConfig.getIpSpaces());
     IpSpaceToBDD baseSrcIpSpaceToBdd = new MemoizedIpSpaceToBDD(bddPacket.getFactory(), bddPacket.getSrcIp(), baseConfig.getIpSpaces());
     IpSpaceToBDD deltaDstIpSpaceToBdd = new MemoizedIpSpaceToBDD(bddPacket.getFactory(), bddPacket.getDstIp(), deltaConfig.getIpSpaces());
@@ -4450,7 +4455,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
         BDDIpAccessListSpecializer deltaSpecializer = new BDDIpAccessListSpecializer(bddPacket, lineBdd, deltaConfig.getIpSpaces(), mgr, deltaDstIpSpaceToBdd, deltaSrcIpSpaceToBdd, false);
         AclLineMatchExpr notRejected = AclLineMatchExprs.and(deltaLines.stream().limit(i).filter(ln -> ln.getFirst() == LineAction.DENY).map(ln -> new NotMatchExpr(ln.getSecond().accept(deltaSpecializer))).collect(Collectors.toSet()));
 
-        exprs.add(AclLineMatchExprs.and(lineMatchExpr, notMatchedByBase, notRejected));
+        exprs.add(AclLineMatchExprs.and(headerSpaceExpr, lineMatchExpr, notMatchedByBase, notRejected));
       }
     }
     AclLineMatchExpr simplExplanation = explainAclExpr(deltaBDDAcl, AclLineMatchExprs.or(exprs));
@@ -4504,7 +4509,7 @@ public class Batfish extends PluginConsumer implements IBatfish {
         increasedFlow == null ? null : new ReachFilterResult(simplExplanation, increasedFlow);
     @Nullable
     ReachFilterResult decreasedResult =
-        decreasedFlow == null ? null : new ReachFilterResult(AclLineMatchExprs.TRUE, decreasedFlow);
+        true || decreasedFlow == null ? null : new ReachFilterResult(AclLineMatchExprs.TRUE, decreasedFlow);
     return new DifferentialReachFilterResult(increasedResult, decreasedResult);
   }
 
@@ -4560,30 +4565,26 @@ public class Batfish extends PluginConsumer implements IBatfish {
         BDDSourceManager.forSources(bddPacket, false, activeInterfaces, referencedSources);
 
     HeaderSpace headerSpace = parameters.resolveHeaderspace(specifierContext());
-    BDD headerSpaceBDD = new HeaderSpaceToBDD(bddPacket, node.getIpSpaces()).toBDD(headerSpace);
     BDDAcl bddAcl = BDDAcl.create(bddPacket, acl, node.getIpAccessLists(), node.getIpSpaces(), mgr);
-    BDD bdd = bddAcl.getBdd().and(headerSpaceBDD).and(mgr.isSane());
 
     AclLineMatchExpr headerSpaceExpr =
-        headerSpace.getNegate()
-            ? new NotMatchExpr(
-                new MatchHeaderSpace(headerSpace.toBuilder().setNegate(false).build()))
-            : new MatchHeaderSpace(headerSpace);
+            headerSpace.getNegate()
+                    ? new NotMatchExpr(
+                    new MatchHeaderSpace(headerSpace.toBuilder().setNegate(false).build()))
+                    : new MatchHeaderSpace(headerSpace);
     AclLineMatchExpr srcExpr =
-        AclLineMatchExprs.and(
-            new NotMatchExpr(OriginatingFromDevice.INSTANCE),
-            new MatchSrcInterface(activeInterfaces));
-    AclLineMatchExpr queryExpr =
-        AclLineMatchExprs.TRUE; // AclLineMatchExprs.and(headerSpaceExpr, srcExpr);
+            AclLineMatchExprs.and(
+                    new NotMatchExpr(OriginatingFromDevice.INSTANCE));
+                    //new MatchSrcInterface(activeInterfaces));
+    AclLineMatchExpr queryExpr = AclLineMatchExprs.and(headerSpaceExpr);// , srcExpr);
+    BDD queryBdd = bddAcl.getAclLineMatchExprToBDD().visit(queryExpr);
+    BDD bdd = bddAcl.getBdd().and(queryBdd).and(mgr.isSane());
 
+
+    AclLineMatchExpr expr = toAclLineMatchExpr(bddAcl.getAclLineMatchExprToBDD(), acl, node.getIpAccessLists());
+    AclLineMatchExpr specializedExpr = expr.accept(new BDDIpAccessListSpecializer(bddAcl.getPkt(), queryBdd, node.getIpSpaces(), mgr, false));
     AclLineMatchExpr explanation =
-        explainAclExpr(
-            queryExpr,
-            toAclLineMatchExpr(null, acl, node.getIpAccessLists()),
-            bddAcl,
-            mgr,
-            bdd,
-            node.getIpSpaces());
+        explainAclExpr(bddAcl, AclLineMatchExprs.and(queryExpr, expr));
 
     AclLineMatchExpr simplExplanation =
         explanation.equals(headerSpaceExpr) ? AclLineMatchExprs.TRUE : explanation;

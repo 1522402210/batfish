@@ -47,7 +47,7 @@ public abstract class AclLineMatchExprSetBuilder {
       return;
     }
 
-    BDD exprBdd = expr.accept(_aclLineMatchExprToBDD);
+    BDD exprBdd = _aclLineMatchExprToBDD.visit(expr);
     BDD newBdd = combinator(_bdd, exprBdd);
     if (newBdd.equals(_bdd)) {
       // expr contributes nothing to the set; discard

@@ -35,6 +35,8 @@ import org.batfish.datamodel.acl.explanation.ConjunctsBuilder;
 import org.batfish.datamodel.acl.explanation.DisjunctsBuilder;
 import org.batfish.symbolic.bdd.AclLineMatchExprToBDD;
 
+import javax.annotation.Nonnull;
+
 /** Reduce an {@link org.batfish.datamodel.IpAccessList} to a single {@link AclLineMatchExpr}. */
 public final class AclToAclLineMatchExpr
     implements GenericAclLineMatchExprVisitor<AclLineMatchExpr> {
@@ -42,7 +44,7 @@ public final class AclToAclLineMatchExpr
 
   private AclLineMatchExprToBDD _aclMatchExprToBDD;
 
-  AclToAclLineMatchExpr(AclLineMatchExprToBDD aclMatchExprToBDD, Map<String, IpAccessList> namedAcls) {
+  AclToAclLineMatchExpr(@Nonnull AclLineMatchExprToBDD aclMatchExprToBDD, Map<String, IpAccessList> namedAcls) {
     _aclMatchExprToBDD = aclMatchExprToBDD;
     _namedAclThunks = createThunks(namedAcls);
   }
@@ -83,7 +85,7 @@ public final class AclToAclLineMatchExpr
   }
 
   public static AclLineMatchExpr toAclLineMatchExpr(
-          AclLineMatchExprToBDD aclMatchExprToBDD, IpAccessList acl, Map<String, IpAccessList> namedAcls) {
+          @Nonnull AclLineMatchExprToBDD aclMatchExprToBDD, IpAccessList acl, Map<String, IpAccessList> namedAcls) {
     AclLineMatchExpr result = new AclToAclLineMatchExpr(aclMatchExprToBDD, namedAcls).computeAclLineMatchExpr(acl);
     return result;
   }

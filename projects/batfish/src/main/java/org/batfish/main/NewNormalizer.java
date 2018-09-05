@@ -16,7 +16,6 @@ import org.batfish.datamodel.acl.PermittedByAcl;
 import org.batfish.datamodel.acl.TrueExpr;
 import org.batfish.datamodel.acl.explanation.ConjunctsBuilder;
 import org.batfish.datamodel.acl.normalize.Negate;
-import org.batfish.datamodel.routing_policy.expr.ConjunctionChain;
 import org.batfish.symbolic.bdd.AclLineMatchExprToBDD;
 
 import java.util.ArrayList;
@@ -24,7 +23,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -57,9 +55,10 @@ public class NewNormalizer implements GenericAclLineMatchExprVisitor<Void> {
 
     private void expandOrs() {
         int oldSize = _conjunctsBuilders.size();
-        _conjunctsBuilders = _conjunctsBuilders.stream().flatMap(this::expandOrs).collect(Collectors.toSet());
-        int newSize = _conjunctsBuilders.size();
+        Set<ConjunctsBuilder> conjunctsBuilders = _conjunctsBuilders.stream().flatMap(this::expandOrs).collect(Collectors.toSet());
+        int newSize = conjunctsBuilders.size();
         System.out.println(String.format("OrMatchExpr caused blowup from %d to %d", oldSize,newSize));
+        _conjunctsBuilders = conjunctsBuilders;
     }
 
   private Stream<ConjunctsBuilder> expandOrs(ConjunctsBuilder conjunctsBuilder) {
@@ -79,8 +78,11 @@ public class NewNormalizer implements GenericAclLineMatchExprVisitor<Void> {
                     : ImmutableList.of(expr);
 
     NewNormalizer normalizer = new NewNormalizer(_aclLineMatchExprToBDD);
+    boolean expandedOr = false;
     for (AclLineMatchExpr conj : conjuncts) {
-      if (conj instanceof OrMatchExpr) {
+      if (!expandedOr && conj instanceof OrMatchExpr) {
+        // only expand one or.
+        expandedOr = true;
         normalizer.visitDisjuncts(((OrMatchExpr) conj).getDisjuncts());
       } else {
         normalizer.visit(conj);
@@ -207,6 +209,16 @@ public class NewNormalizer implements GenericAclLineMatchExprVisitor<Void> {
 
     @Override
     public Void visitOrMatchExpr(OrMatchExpr orMatchExpr) {
+        /*
+        int oldSize = _conjunctsBuilders.size();
+        _conjunctsBuilders = orMatchExpr.getDisjuncts().stream().flatMap(disjunct -> {
+            NewNormalizer normalizer = new NewNormalizer(this);
+            disjunct.accept(normalizer);
+            return normalizer._conjunctsBuilders.stream().filter(conjunctsBuilder -> !conjunctsBuilder.unsat());
+        }).collect(Collectors.toSet());
+        int newSize = _conjunctsBuilders.size();
+        System.out.println(String.format("OrMatchExpr caused blowup from %d to %d", oldSize,newSize));
+        */
         addConstraint(orMatchExpr);
         return null;
     }

@@ -39,7 +39,7 @@ public final class TracerouteQuestion extends Question {
       @JsonProperty(PROP_HEADER_CONSTRAINTS) @Nullable PacketHeaderConstraints headerConstraints) {
     _ignoreAcls = ignoreAcls;
     _sourceLocationSpecifierInput = sourceLocationSpecifierInput;
-    _headerConstraints = firstNonNull(headerConstraints, new PacketHeaderConstraints());
+    _headerConstraints = firstNonNull(headerConstraints, PacketHeaderConstraints.unconstrained());
   }
 
   TracerouteQuestion() {

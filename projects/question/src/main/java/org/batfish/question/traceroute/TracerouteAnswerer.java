@@ -9,6 +9,7 @@ import com.google.common.collect.LinkedHashMultiset;
 import com.google.common.collect.Multiset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import javax.annotation.Nonnull;
 import org.batfish.common.Answerer;
@@ -20,6 +21,7 @@ import org.batfish.datamodel.FlowHistory.FlowHistoryInfo;
 import org.batfish.datamodel.FlowTrace;
 import org.batfish.datamodel.Ip;
 import org.batfish.datamodel.IpProtocol;
+import org.batfish.datamodel.IpSpace;
 import org.batfish.datamodel.PacketHeaderConstraints;
 import org.batfish.datamodel.SubRange;
 import org.batfish.datamodel.answers.AnswerElement;
@@ -36,6 +38,7 @@ import org.batfish.specifier.FlexibleLocationSpecifierFactory;
 import org.batfish.specifier.InterfaceLinkLocation;
 import org.batfish.specifier.InterfaceLocation;
 import org.batfish.specifier.IpSpaceAssignment;
+import org.batfish.specifier.IpSpaceAssignment.Entry;
 import org.batfish.specifier.IpSpaceSpecifier;
 import org.batfish.specifier.IpSpaceSpecifierFactory;
 import org.batfish.specifier.Location;
@@ -44,13 +47,13 @@ import org.batfish.specifier.LocationSpecifierFactory;
 import org.batfish.specifier.LocationVisitor;
 import org.batfish.specifier.SpecifierContext;
 
+/** Prouces the answer for {@link org.batfish.question.traceroute.TracerouteQuestion} */
 public final class TracerouteAnswerer extends Answerer {
 
-  private static final String DEFAULT_SOURCE_LOCATION_SPECIFIER_FACTORY =
+  private static final String SRC_LOCATION_SPECIFIER_FACTORY =
       FlexibleLocationSpecifierFactory.NAME;
-  private static final String DEFAULT_IP_SPACE_SPECIFIER_FACTORY =
+  private static final String IP_SPECIFIER_FACTORY =
       FlexibleInferFromLocationIpSpaceSpecifierFactory.NAME;
-  private static final Ip DEFAULT_OUTSIDE_IP = new Ip("8.8.8.8");
 
   static final String COL_FLOW = "Flow";
   static final String COL_TRACES = "Traces";
@@ -62,7 +65,6 @@ public final class TracerouteAnswerer extends Answerer {
 
   TracerouteAnswerer(Question question, IBatfish batfish) {
     super(question, batfish);
-
     _configurations = batfish.loadConfigurations();
     _ipSpaceRepresentative = IpSpaceRepresentative.load();
     _sourceIpAssignment = initSourceIpAssignment();
@@ -73,11 +75,11 @@ public final class TracerouteAnswerer extends Answerer {
     /* construct specifiers */
     TracerouteQuestion tracerouteQuestion = (TracerouteQuestion) _question;
     LocationSpecifier sourceLocationSpecifier =
-        LocationSpecifierFactory.load(DEFAULT_SOURCE_LOCATION_SPECIFIER_FACTORY)
+        LocationSpecifierFactory.load(SRC_LOCATION_SPECIFIER_FACTORY)
             .buildLocationSpecifier(tracerouteQuestion.getSourceLocationSpecifierInput());
 
     IpSpaceSpecifier sourceIpSpaceSpecifier =
-        IpSpaceSpecifierFactory.load(DEFAULT_IP_SPACE_SPECIFIER_FACTORY)
+        IpSpaceSpecifierFactory.load(IP_SPECIFIER_FACTORY)
             .buildIpSpaceSpecifier(tracerouteQuestion.getHeaderConstraints().getSrcIps());
 
     /* resolve specifiers */
@@ -202,14 +204,14 @@ public final class TracerouteAnswerer extends Answerer {
     TracerouteQuestion question = (TracerouteQuestion) _question;
 
     Set<Location> srcLocations =
-        LocationSpecifierFactory.load(DEFAULT_SOURCE_LOCATION_SPECIFIER_FACTORY)
+        LocationSpecifierFactory.load(SRC_LOCATION_SPECIFIER_FACTORY)
             .buildLocationSpecifier(question.getSourceLocationSpecifierInput())
             .resolve(_batfish.specifierContext());
 
     ImmutableSet.Builder<Flow> setBuilder = ImmutableSet.builder();
-    Flow.Builder flowBuilder = constraintsToFlow(question.getHeaderConstraints());
     // Perform cross-product of all locations to flows
     for (Location srcLocation : srcLocations) {
+      Flow.Builder flowBuilder = constraintsToFlow(question.getHeaderConstraints(), srcLocation);
       setSourceLocation(flowBuilder, srcLocation);
       flowBuilder.setTag(tag);
       setBuilder.add(flowBuilder.build());
@@ -225,30 +227,61 @@ public final class TracerouteAnswerer extends Answerer {
    *     value.
    */
   @VisibleForTesting
-  Flow.Builder constraintsToFlow(PacketHeaderConstraints constraints)
+  Flow.Builder constraintsToFlow(PacketHeaderConstraints constraints, Location srcLocation)
       throws IllegalArgumentException {
     Flow.Builder builder = Flow.builder();
 
     // Extract and source IP from header constraints,
     String headerSrcIp = constraints.getSrcIps();
     if (headerSrcIp != null) {
-      // TODO: interpret using sane mode
-      builder.setSrcIp(new Ip(headerSrcIp));
+      // interpret given Src IP using sane mode
+      IpSpaceSpecifier srcIpSpecifier =
+          IpSpaceSpecifierFactory.load(IP_SPECIFIER_FACTORY).buildIpSpaceSpecifier(headerSrcIp);
+      IpSpaceAssignment srcIps =
+          srcIpSpecifier.resolve(ImmutableSet.of(), _batfish.specifierContext());
+      checkArgument(
+          srcIps.getEntries().size() == 1,
+          "Specified source: %s, resolves to more than one IP",
+          headerSrcIp);
+      IpSpace space = srcIps.getEntries().iterator().next().getIpSpace();
+      Optional<Ip> srcIp = _ipSpaceRepresentative.getRepresentative(space);
+      checkArgument(srcIp.isPresent(), "At least one source IP is required");
+      builder.setSrcIp(srcIp.get());
     } else {
-      // TODO: Use from source location
+      // Use from source location to determine header Src IP
+      Optional<Entry> entry =
+          _sourceIpAssignment
+              .getEntries()
+              .stream()
+              .filter(e -> e.getLocations().contains(srcLocation))
+              .findFirst();
+      checkArgument(
+          entry.isPresent(),
+          "Cannot resolve a source IP address from location %s",
+          ((TracerouteQuestion) _question).getSourceLocationSpecifierInput());
+      Optional<Ip> srcIp = _ipSpaceRepresentative.getRepresentative(entry.get().getIpSpace());
+      checkArgument(srcIp.isPresent(), "At least one destination IP is required");
+      builder.setSrcIp(srcIp.get());
     }
 
     String headerDstIp = constraints.getDstIps();
-    if (headerDstIp != null) {
-      // TODO: interpret using sane mode
-      builder.setDstIp(new Ip(headerDstIp));
-    } else {
-      builder.setDstIp(DEFAULT_OUTSIDE_IP);
-    }
+    checkArgument(
+        constraints.getDstIps() != null, "Cannot perform traceroute without a destination");
+    IpSpaceSpecifier dstIpSpecifier =
+        IpSpaceSpecifierFactory.load(IP_SPECIFIER_FACTORY).buildIpSpaceSpecifier(headerDstIp);
+    IpSpaceAssignment dstIps =
+        dstIpSpecifier.resolve(ImmutableSet.of(), _batfish.specifierContext());
+    checkArgument(
+        dstIps.getEntries().size() == 1,
+        "Specified destination: %s, resolves to more than one IP",
+        headerDstIp);
+    IpSpace space = dstIps.getEntries().iterator().next().getIpSpace();
+    Optional<Ip> dstIp = _ipSpaceRepresentative.getRepresentative(space);
+    checkArgument(dstIp.isPresent(), "At least one destination IP is required");
+    builder.setDstIp(dstIp.get());
 
     // Deal with IP packet header values.
-
-    // IP protocol (default to ICMP)
+    // IP protocol (default to UDP)
     Set<IpProtocol> ipProtocols = constraints.resolveIpProtocols();
     if (ipProtocols != null) {
       if (ipProtocols.size() > 1) {
